@@ -55,11 +55,18 @@ server.serverHTTP.on("upgrade", (request, socket, head) => {
 const wsReqs = new Map<string, (data: any) => void>()
 function awaitReq(ws: WebSocket, data: object){
     const reqId = randStr();
-    ws.send(JSON.stringify({
-        ...data,
-        reqId
-    }));
-    return new Promise<any>(resolve => {
+    return new Promise<any>((resolve, reject) => {
+        setTimeout(() => {
+            const awaitingPromise = wsReqs.get(reqId);
+            if(awaitingPromise) {
+                reject();
+                wsReqs.delete(reqId);
+            }
+        }, 1000 * 30) // 30s
+        ws.send(JSON.stringify({
+            ...data,
+            reqId
+        }));
         wsReqs.set(reqId, resolve)
     });
 }
@@ -86,18 +93,27 @@ wss.on("connection", async (ws) => {
         activeWS.delete(hash);
     });
     if(process.env.PASSWORD){
-        const password = await awaitReq(ws, {require: "password"});
+
+        let password;
+        try{
+            password = await awaitReq(ws, {require: "password"});
+        }catch (e) { }
+
         if(password !== process.env.PASSWORD) {
             ws.close();
             return;
         }
     }else if(process.env.AUTH_URL){
         const share_id = randStr();
-        const login = await awaitReq(ws, {
-            require: "login",
-            loginURL: process.env.AUTH_URL + `?share=${share_id}`,
-            validateURL: process.env.AUTH_URL + process.env.AUTH_VALIDATE_PATH + `?share=${share_id}`
-        });
+
+        let login;
+        try{
+            login = await awaitReq(ws, {
+                require: "login",
+                loginURL: process.env.AUTH_URL + `?share=${share_id}`,
+                validateURL: process.env.AUTH_URL + process.env.AUTH_VALIDATE_PATH + `?share=${share_id}`
+            });
+        }catch (e) { }
 
         if(!login){
             ws.close();
@@ -140,7 +156,12 @@ server.addListener({
         if(!ws) return;
 
         const {headers, method, url} = req;
-        const data = await awaitReq(ws, {headers, method, url});
+        let data;
+        try{
+            data = await awaitReq(ws, {headers, method, url});
+        }catch (e) {
+            return;
+        }
         data.headers.forEach(([key, value]) => {
             res.setHeader(key, value);
         });
@@ -149,6 +170,7 @@ server.addListener({
     }
 }, true);
 
+server.pages["/"].addInBody("<style>html{font-family: sans-serif}</style><h1>FullStacked Share Server</h1>")
 
 setInterval(() => {
     console.log(`${activeWS.size} Active WS | ${proxiedWS.size} Proxied WS | ${wsReqs.size} Awaiting Requests`);
