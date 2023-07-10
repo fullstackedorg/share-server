@@ -86,6 +86,9 @@ wss.on("connection", async (ws) => {
 
         const {reqId, data} = rawData;
         const awaitingReq = wsReqs.get(reqId);
+
+        if(!awaitingReq) return;
+
         awaitingReq(data);
         wsReqs.delete(reqId);
     });
