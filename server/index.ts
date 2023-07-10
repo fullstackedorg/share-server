@@ -16,7 +16,6 @@ server.serverHTTP.on("upgrade", (request, socket, head) => {
     const proxyWS = activeWS.get(firstDomainPart);
     if(proxyWS){
         proxyWSS.handleUpgrade(request, socket, head, (ws) => {
-            console.log(request.url);
             const wsId = randStr();
             proxiedWS.set(wsId, ws);
             proxyWS.send(JSON.stringify({
@@ -25,6 +24,24 @@ server.serverHTTP.on("upgrade", (request, socket, head) => {
                 headers: request.headers,
                 url: request.url
             }));
+            ws.on("close", () => {
+                proxyWS.send(JSON.stringify({
+                    ws: true,
+                    wsId,
+                    close: true
+                }));
+                proxiedWS.delete(wsId);
+            });
+            ws.on("message", message => {
+                proxyWS.send(JSON.stringify({
+                    ws: true,
+                    wsId,
+                    data: message.toString()
+                }))
+            })
+            proxyWS.on("close", () => {
+                proxiedWS.delete(wsId);
+            });
             proxyWSS.emit('connection', ws, request);
         });
         return;
@@ -41,17 +58,16 @@ function awaitReq(ws: WebSocket, data: object){
     ws.send(JSON.stringify({
         ...data,
         reqId
-    }))
+    }));
     return new Promise<any>(resolve => {
         wsReqs.set(reqId, resolve)
     });
 }
 
 const activeWS = new Map<string, WebSocket>()
-wss.on("connection", (ws) => {
-    const hash = randStr();
+wss.on("connection", async (ws) => {
+    const hash = randStr().slice(0, 6);
     activeWS.set(hash, ws);
-    ws.send(JSON.stringify({hash}))
     ws.on("message", (message) => {
         const rawData = JSON.parse(message.toString());
 
@@ -64,7 +80,53 @@ wss.on("connection", (ws) => {
         const {reqId, data} = rawData;
         const awaitingReq = wsReqs.get(reqId);
         awaitingReq(data);
+        wsReqs.delete(reqId);
     });
+    ws.on("close", () => {
+        activeWS.delete(hash);
+    });
+    if(process.env.PASSWORD){
+        const password = await awaitReq(ws, {require: "password"});
+        if(password !== process.env.PASSWORD) {
+            ws.close();
+            return;
+        }
+    }else if(process.env.AUTH_URL){
+        const share_id = randStr();
+        const login = await awaitReq(ws, {
+            require: "login",
+            loginURL: process.env.AUTH_URL + `?share=${share_id}`,
+            validateURL: process.env.AUTH_URL + process.env.AUTH_VALIDATE_PATH + `?share=${share_id}`
+        });
+
+        if(!login){
+            ws.close();
+            return;
+        }
+
+        let authorized;
+        try{
+            const response = await fetch(process.env.AUTH_URL + process.env.AUTH_AUTHORIZE_PATH, {
+                method: "POST",
+                body: login,
+                headers: {
+                    authorization: process.env.AUTH_SECRET
+                }
+            });
+            if(response.status >= 400)
+                authorized = false;
+            else
+                authorized = await response.text();
+        }catch (e){
+            authorized = false
+        }
+
+        if(!authorized){
+            ws.close();
+            return;
+        }
+    }
+    ws.send(JSON.stringify({hash}))
 })
 
 server.start();
@@ -86,3 +148,9 @@ server.addListener({
         res.end(data.body);
     }
 }, true);
+
+
+setInterval(() => {
+    console.log(`${activeWS.size} Active WS | ${proxiedWS.size} Proxied WS | ${wsReqs.size} Awaiting Requests`);
+}, 2000);
+
