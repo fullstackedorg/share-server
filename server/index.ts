@@ -155,6 +155,15 @@ function readBody(req: IncomingMessage) {
     });
 }
 
+function str2ab(str) {
+    const buf = new ArrayBuffer(str.length);
+    const bufView = new Uint8Array(buf);
+    for (let i = 0, strLen = str.length; i < strLen; i++) {
+        bufView[i] = str.charCodeAt(i);
+    }
+    return buf;
+}
+
 server.addListener({
     prefix: "default",
     async handler(req: IncomingMessage, res: ServerResponse): Promise<any> {
@@ -177,7 +186,7 @@ server.addListener({
             res.setHeader(key, value);
         });
         res.writeHead(data.status);
-        res.end(data.body);
+        res.end(Buffer.from(str2ab(data.body)), 'binary');
     }
 }, true);
 
