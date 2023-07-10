@@ -4,4 +4,4 @@ RUN apk add --upgrade tini
 
 COPY dist/server /server
 
-CMD ["tini", "--", "node", "/server/index.mjs"]
+CMD ["tini", "--", "NODE_ENV=production", "node", "/server/index.mjs"]

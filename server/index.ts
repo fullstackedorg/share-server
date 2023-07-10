@@ -147,6 +147,14 @@ wss.on("connection", async (ws) => {
 
 server.start();
 
+function readBody(req: IncomingMessage) {
+    return new Promise((resolve) => {
+        let data = "";
+        req.on('data', chunk => data += chunk.toString());
+        req.on('end', () => resolve(data));
+    });
+}
+
 server.addListener({
     prefix: "default",
     async handler(req: IncomingMessage, res: ServerResponse): Promise<any> {
@@ -155,13 +163,16 @@ server.addListener({
         const ws = activeWS.get(firstDomainPart);
         if(!ws) return;
 
+        const body = await readBody(req);
+
         const {headers, method, url} = req;
         let data;
         try{
-            data = await awaitReq(ws, {headers, method, url});
+            data = await awaitReq(ws, {headers, method, url, body});
         }catch (e) {
             return;
         }
+
         data.headers.forEach(([key, value]) => {
             res.setHeader(key, value);
         });
