@@ -109,11 +109,13 @@ wss.on("connection", async (ws) => {
     }else if(process.env.AUTH_URL){
         const share_id = randStr();
 
+        const loginURL = process.env.AUTH_URL + (!process.env.AUTH_URL.endsWith("/") ? "/" : "")
+
         let login;
         try{
             login = await awaitReq(ws, {
                 require: "login",
-                loginURL: process.env.AUTH_URL + `?share=${share_id}`,
+                loginURL: loginURL + `?share=${share_id}`,
                 validateURL: process.env.AUTH_URL + process.env.AUTH_VALIDATE_PATH + `?share=${share_id}`
             });
         }catch (e) { }
