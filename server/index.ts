@@ -5,6 +5,14 @@ import type {IncomingMessage, ServerResponse} from "http";
 
 const server = new Server();
 
+server.addListener({
+    prefix: "default",
+    handler(req: IncomingMessage, res: ServerResponse): any {
+        if(req.url !== "/hello") return;
+        res.end("Bonjour");
+    }
+}, true);
+
 const wss = new WebSocketServer({noServer: true});
 
 const proxyWSS = new WebSocketServer({noServer: true});
